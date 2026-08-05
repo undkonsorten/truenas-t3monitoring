@@ -39,11 +39,21 @@ docker build -t ghcr.io/undkonsorten/t3monitoring:13.4.33 -f deploy/Dockerfile .
 docker push ghcr.io/undkonsorten/t3monitoring:13.4.33
 ```
 
-Adjust the registry/tag to wherever you actually host it — `ghcr.io/undkonsorten/...`
-in `ix_values.yaml` is a placeholder. If it's a private registry, TrueNAS's Docker
-daemon needs credentials for it configured on the host (`docker login` on the
-TrueNAS box, or the equivalent registry-credentials setup in the Apps UI) — plain
-`ghcr.io` packages default to private unless you make them public.
+Adjust the registry/tag if you host it elsewhere.
+
+**GHCR packages are private by default**, and a private package is indistinguishable
+from a missing one when you check without credentials — anonymous pulls and the
+package web page both come back 404/`DENIED`. Don't read that as "the push failed";
+check with `docker manifest inspect <image>` while logged in.
+
+TrueNAS therefore can't pull it until you do one of:
+
+* **Give TrueNAS credentials** (keeps the package private) — **Apps → Configuration
+  → Sign-in to a Docker registry → Add Registry**, choose **Other Registry**, URI
+  `https://ghcr.io`, username = your GitHub username, password = a PAT with
+  `read:packages`.
+* **Make the package public** — GitHub → the package → Package settings → Change
+  visibility. No credentials needed anywhere after that.
 
 ## Publishing an update
 

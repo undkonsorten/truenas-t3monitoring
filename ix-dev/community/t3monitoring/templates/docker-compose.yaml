@@ -29,6 +29,15 @@
    itself via setpriv — see deploy/docker-entrypoint.sh in the app repo. #}
 {% set containers = [web, scheduler] %}
 {% for c in containers %}
+  {# Containers default to cap_drop: [ALL], which breaks that privilege drop:
+     Apache fails with "AH02156: setgid: unable to set group id to Group 33"
+     and keeps its workers running as root, while the scheduler dies on
+     "setpriv: setresuid failed". SETUID/SETGID are what let both drop to
+     www-data as intended — dropping privileges needs the capability to do so.
+     CHOWN is for the entrypoint's ownership fix-up: redundant when the
+     permissions container ran (ix_volume storage), but the only thing that
+     makes the mounts writable if it didn't (host_path storage). #}
+  {% do c.add_caps(["CHOWN", "SETUID", "SETGID"]) %}
   {% do c.depends.add_dependency(values.consts.mariadb_container_name, "service_healthy") %}
   {% do c.environment.add_env("TYPO3_CONTEXT", "Production") %}
   {% do c.environment.add_env("TYPO3_DB_HOST", values.consts.mariadb_container_name) %}
