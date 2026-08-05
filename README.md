@@ -48,12 +48,20 @@ check with `docker manifest inspect <image>` while logged in.
 
 TrueNAS therefore can't pull it until you do one of:
 
-* **Give TrueNAS credentials** (keeps the package private) — **Apps → Configuration
+* **Give TrueNAS credentials** (what this deployment does) — **Apps → Configuration
   → Sign-in to a Docker registry → Add Registry**, choose **Other Registry**, URI
-  `https://ghcr.io`, username = your GitHub username, password = a PAT with
-  `read:packages`.
+  `https://ghcr.io`, username = a GitHub account with read access to the package,
+  password = a personal access token **(classic)** with the `read:packages` scope.
+
+  It must be a *classic* token: "GitHub Packages only supports authentication using
+  a personal access token (classic)" — fine-grained tokens are rejected by ghcr.io
+  regardless of how they're scoped. Note the token's expiry somewhere: when it
+  lapses, the app fails on its next image pull with a generic error.
+
 * **Make the package public** — GitHub → the package → Package settings → Change
-  visibility. No credentials needed anywhere after that.
+  visibility, then no credentials are needed anywhere. Note that org policy can
+  forbid public packages, and that "Internal" is not public: it still refuses
+  anonymous pulls exactly like private does.
 
 ## Publishing an update
 
