@@ -18,16 +18,19 @@ ix-dev/community/t3monitoring/
     └── test_values/basic-values.yaml # Values used for local render/deploy testing
 ```
 
-This mirrors `deploy/docker-compose.yaml` from the main repo (web + scheduler +
+This mirrors `deploy/docker-compose.yml` from the main repo (web + scheduler +
 mariadb, same env vars, same reverse-proxy-trusts-X-Forwarded-Proto setup) but
-expressed in TrueNAS's templating format instead of plain compose, which is what
-gets you: a real config form in the Apps UI, TrueNAS-managed storage datasets with
-automatic permission fixing, and — the actual point of doing this instead of just
-using "Install via YAML" — proper update tracking.
+expressed in TrueNAS's templating format instead of plain compose.
+
+Since TrueNAS 24.10 dropped custom catalogs (see "Installing this on TrueNAS"
+below), the templating format no longer buys UI integration. What it still buys:
+a single parameterised definition of the stack that you render per environment,
+with `ix_lib`'s dependency helpers handling the MariaDB wiring, healthchecks and
+the permission-fixing init container for you.
 
 ## Prerequisite: publish the image
 
-Unlike `deploy/docker-compose.yaml` (which can `build:` locally), this template only
+Unlike `deploy/docker-compose.yml` (which can `build:` locally), this template only
 references a pre-built image (`ix_values.yaml` → `images.image`). Build and push it
 first:
 
@@ -49,30 +52,96 @@ Whenever you rebuild the image:
 1. Push the new image tag.
 2. Update `ix_values.yaml` → `images.image.tag`.
 3. Bump `app.yaml` → `app_version` (upstream version) **and** `version` (catalog
-   revision — this is the field TrueNAS actually watches to show "Update available").
-4. Commit and push to whatever git repo/branch this catalog lives in.
-5. In TrueNAS: Apps → Discover → Refresh Catalog (or wait for the periodic sync).
+   revision). TrueNAS isn't watching these — nothing syncs this repo — but keeping
+   them accurate is what makes this repo a trustworthy record of what's deployed.
+4. Commit and push this repo, then bump the submodule pointer in the parent.
+5. Re-render with your production values file (see "Installing this on TrueNAS")
+   and paste the result into the app's **Edit** YAML in TrueNAS.
+6. If the schema changed, run `database:updateschema` + `cache:flush` in the web
+   container afterwards.
 
-## Registering this catalog in TrueNAS
+There is no "Refresh Catalog" step and no update badge — that only exists for apps
+that come from a catalog TrueNAS syncs, which this isn't.
 
-This directory needs to be the root of its own git repo (or you push this subtree to
-one) before TrueNAS can add it:
+## Installing this on TrueNAS
 
-```bash
-# from inside truenas-catalog/
-git init && git add -A && git commit -m "Initial t3monitoring catalog"
-git remote add origin git@your-git-host:you/t3monitoring-catalog.git
-git push -u origin main
-```
+> **You cannot register this as a catalog.** TrueNAS removed custom/third-party
+> catalog support when apps moved from Kubernetes/Helm to Docker in 24.10 "Electric
+> Eel". The old **Apps → Manage Catalogs → Add Catalog** screen is gone: the current
+> API ([`catalog.update`](https://api.truenas.com/v25.10/api_methods_catalog.update.html))
+> is a singleton that accepts only `preferred_trains` — there is no `catalog.create`
+> and no repository/branch field. On 24.10+ the only ways to run a non-official app
+> are the Custom App wizard and **Install via YAML**
+> ([docs](https://apps.truenas.com/managing-apps/installing-custom-apps/)).
+>
+> This catalog is written in the *new* `ix-dev/` Docker format (correct for 24.10+),
+> while custom catalogs only ever worked on ≤24.04 — so there is no TrueNAS version
+> that can consume it as a catalog. What it's still good for: being the single
+> maintained definition of the container topology, which you **render to plain
+> compose** and paste into Install via YAML.
 
-Then in TrueNAS: **Apps → Manage Catalogs → Add Catalog** → point **Repository** at
-that git URL, **Branch** at `main`, **Preferred Trains** at `community` (the only
-train this repo defines). Wait ~1-2 minutes for the initial sync, then find
-"t3monitoring" under **Apps → Discover**.
+So instead of registering it, render it:
+
+1. **Write a production values file.** Start from
+   `templates/test_values/basic-values.yaml`, replace the dummy secrets with real
+   ones, and point the storage at real dataset paths. Keep it out of git — it holds
+   passwords and the encryption key.
+
+   Set the paths via the `ix_volumes:` mapping and leave the storage `type` as
+   `ix_volume`:
+
+   ```yaml
+   ix_volumes:
+     fileadmin: /mnt/<pool>/apps/t3monitoring/fileadmin
+     var_log:   /mnt/<pool>/apps/t3monitoring/log
+     db_data:   /mnt/<pool>/apps/t3monitoring/db
+
+   storage:
+     fileadmin: {type: ix_volume, ix_volume_config: {dataset_name: fileadmin, create_host_path: true}}
+     var_log:   {type: ix_volume, ix_volume_config: {dataset_name: var_log,   create_host_path: true}}
+     db_data:   {type: ix_volume, ix_volume_config: {dataset_name: db_data,   create_host_path: true}}
+     additional_storage: []
+   ```
+
+   **Do not switch these to `type: host_path`.** Both render to the same bind
+   mounts, but `host_path` drops the `permissions` container from the output
+   entirely — and that container is the only thing that chowns `fileadmin` and
+   `var_log` to `33:33` (www-data) before the app starts. With `host_path` you get
+   three services instead of four and have to fix ownership by hand.
+
+2. **Render it to plain compose:**
+
+   ```bash
+   git clone https://github.com/truenas/apps.git /tmp/truenas-apps
+   cp -r ix-dev/community/t3monitoring /tmp/truenas-apps/ix-dev/community/
+   cp prod-values.yaml /tmp/truenas-apps/ix-dev/community/t3monitoring/templates/test_values/
+   cd /tmp/truenas-apps
+   python3 .github/scripts/ci.py --app t3monitoring --train community \
+           --test-file prod-values.yaml --render-only=true
+   ```
+
+   Output: `ix-dev/community/t3monitoring/templates/rendered/docker-compose.yaml`.
+   The render happens inside `ghcr.io/truenas/apps_validation:latest`, so you only
+   need `docker`, `jq`, `openssl` and `pyyaml` locally — no Jinja/pydantic setup.
+
+3. **Sanity-check the output** before pasting: four services (`mariadb`,
+   `permissions`, `t3monitoring`, `t3monitoring-scheduler`), all mounts are bind
+   mounts to your real dataset paths, `volumes: {}` is empty, and
+   `docker compose -f <rendered> config -q` passes. The top-level `x-portals` /
+   `x-notes` / `x-action-required` keys are TrueNAS metadata — compose ignores `x-`
+   extensions, so leave them or strip them, either works.
+
+4. **Paste it in:** TrueNAS → **Apps → Discover → ⋮ → Install via YAML**,
+   Application Name `t3monitoring`. If it fails, the UI error is generic — read
+   `/var/log/app_lifecycle.log` on the host for the actual Docker error (common
+   cause: the published port is already taken).
+
+What you give up versus a real catalog app: the config form (edit the YAML instead)
+and the "Update available" badge (see "Publishing an update" below).
 
 ## Importing a database fixture/dump
 
-Unlike `deploy/docker-compose.yaml` (which mounts a dump into `mariadb`'s
+Unlike `deploy/docker-compose.yml` (which mounts a dump into `mariadb`'s
 `/docker-entrypoint-initdb.d` for auto-import on first boot), the catalog's
 `mariadb` container is created through `ix_lib`'s `deps.mariadb()` helper, which
 doesn't expose that hook. So here, importing a fixture is always a manual,
@@ -101,8 +170,8 @@ what's there.
      mariadb -uroot -p'<db_root_password from the app's config>' t3monitoring
    ```
    Replace `t3monitoring` if you changed `consts.db_name` in `ix_values.yaml`, and
-   the password with whatever you set for `db_root_password` in the app's config
-   form (TrueNAS UI → the app → Edit).
+   the password with the `db_root_password` from the values file you rendered with
+   (also visible in the app's YAML: TrueNAS UI → the app → Edit).
 
    Prefer the UI instead? Apps → Installed → t3monitoring → **Shell** → select the
    `mariadb` container — but the shell doesn't accept piped stdin from your local
@@ -147,8 +216,13 @@ python3 .github/scripts/ci.py --app t3monitoring --train community --test-file b
 
 ## Relationship to `deploy/`
 
-`deploy/docker-compose.yaml` (plain compose, "Install via YAML") and this catalog
-are two independent ways to run the same image — pick one, not both. The catalog is
-worth the extra structure if you want update badges and a proper config form; the
-plain compose file is worth it for "I just want it running now, I'll manage updates
-by hand." See `../deploy/README-TrueNAS.md` for the plain-compose path.
+`deploy/docker-compose.yml` (plain compose) and this catalog are two independent
+ways to run the same image — pick one, not both. **Both now end at the same place:
+Install via YAML.** They differ in where the YAML comes from:
+
+* `deploy/` — you hand-edit the compose file (swap `build:` for `image:`, inline the
+  `.env` values, point the volumes at datasets) and paste it. Fewer moving parts,
+  more hand-editing per environment. See `../deploy/README-TrueNAS.md`.
+* this catalog — you keep a values file per environment and *render* the compose
+  from a parameterised template. More structure up front; per-environment changes
+  are a values edit and a re-render instead of hand-surgery on YAML.
