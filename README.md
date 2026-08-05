@@ -32,8 +32,8 @@ references a pre-built image (`ix_values.yaml` → `images.image`). Build and pu
 first:
 
 ```bash
-docker build -t ghcr.io/undkonsorten/t3monitoring:11.5.23 -f deploy/Dockerfile .
-docker push ghcr.io/undkonsorten/t3monitoring:11.5.23
+docker build -t ghcr.io/undkonsorten/t3monitoring:13.4.33 -f deploy/Dockerfile .
+docker push ghcr.io/undkonsorten/t3monitoring:13.4.33
 ```
 
 Adjust the registry/tag to wherever you actually host it — `ghcr.io/undkonsorten/...`
@@ -115,7 +115,20 @@ what's there.
    docker restart ix-t3monitoring-t3monitoring-1 ix-t3monitoring-t3monitoring-scheduler-1
    ```
 
-5. Log into `/typo3/` with an account from the dump to confirm it actually landed.
+5. **Run the upgrade wizards** — the shipped `deploy/seed/dump.sql.gz` is a
+   pre-upgrade TYPO3 11.5 fixture, so on a fresh v13 install the schema is stale
+   and the app 500s on missing tables. Run once inside the `t3monitoring` (web)
+   container after the import:
+   ```bash
+   docker exec -i ix-t3monitoring-t3monitoring-1 vendor/bin/typo3 database:updateschema
+   docker exec -i ix-t3monitoring-t3monitoring-1 vendor/bin/typo3 upgrade:run databaseRowsUpdateWizard
+   docker exec -i ix-t3monitoring-t3monitoring-1 vendor/bin/typo3 upgrade:run sysLogSerialization
+   docker exec -i ix-t3monitoring-t3monitoring-1 vendor/bin/typo3 cache:flush
+   ```
+   (191 field changes + 2 wizards on the 11→13 jump.) If you import a dump that
+   was *already* on v13, skip this step.
+
+6. Log into `/typo3/` with an account from the dump to confirm it actually landed.
 
 ## Local validation (before pushing)
 

@@ -45,7 +45,7 @@
   {% do c.environment.add_env("TYPO3_MAIL_TRANSPORT_SMTP_ENCRYPT", values.t3monitoring.mail_smtp_encrypt) %}
   {% do c.environment.add_user_envs(values.t3monitoring.additional_envs) %}
 
-  {% do c.add_storage("/var/www/html/private/fileadmin", values.storage.fileadmin) %}
+  {% do c.add_storage("/var/www/html/public/fileadmin", values.storage.fileadmin) %}
   {% do c.add_storage("/var/www/html/var/log", values.storage.var_log) %}
   {% for store in values.storage.additional_storage %}
     {% do c.add_storage(store.mount_path, store) %}

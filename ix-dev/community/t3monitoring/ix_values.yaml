@@ -4,10 +4,10 @@ images:
     # Update both this tag and app.yaml's `version` (and `app_version` if the
     # upstream TYPO3/t3monitoring version changed) whenever you push a new build.
     repository: ghcr.io/undkonsorten/t3monitoring
-    tag: "11.5.23"
+    tag: "13.4.33"
   mariadb_image:
     repository: mariadb
-    tag: "10.6"
+    tag: "10.11"
   container_utils_image:
     repository: ixsystems/container-utils
     tag: 1.0.2

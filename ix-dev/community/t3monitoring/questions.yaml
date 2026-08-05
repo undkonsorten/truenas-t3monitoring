@@ -47,7 +47,7 @@ questions:
           label: TYPO3 Encryption Key
           description: |
             Must not be blank. Reuse the value already in
-            project/private/typo3conf/LocalConfiguration.php ('encryptionKey') so
+            project/config/system/settings.php ('encryptionKey') so
             existing sessions/hashes/links stay valid — a different value doesn't
             just start fresh, it makes TYPO3 refuse to boot until it's set.
           schema:
@@ -59,7 +59,7 @@ questions:
           label: Install Tool Password (pre-hashed)
           description: |
             A pre-hashed argon2i value, not plain text. Generate one with:
-            docker run --rm php:8.1-cli php -r "echo password_hash('yourpassword', PASSWORD_ARGON2I), PHP_EOL;"
+            docker run --rm php:8.4-cli php -r "echo password_hash('yourpassword', PASSWORD_ARGON2I), PHP_EOL;"
           schema:
             type: string
             default: ""
@@ -184,7 +184,7 @@ questions:
       attrs:
         - variable: fileadmin
           label: fileadmin Storage
-          description: TYPO3's private/fileadmin — user-managed content and uploads.
+          description: TYPO3's public/fileadmin — user-managed content and uploads.
           schema:
             type: dict
             attrs:
