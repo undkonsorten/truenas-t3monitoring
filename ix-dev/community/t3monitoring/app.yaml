@@ -1,0 +1,37 @@
+app_version: "11.5.23"
+categories:
+  - productivity
+date_added: "2026-08-05"
+description: TYPO3 CMS instance running the t3monitoring extension, used to monitor other TYPO3 sites
+home: https://github.com/t3monitor/t3monitoring
+host_mounts: []
+icon: https://raw.githubusercontent.com/t3monitor/t3monitoring/master/Resources/Public/Icons/Extension.svg
+keywords:
+  - typo3
+  - monitoring
+  - cms
+lib_version: 2.3.8
+lib_version_hash: cd75c897a1e8fef54b5bd00d0d8849f240bc50db2ef650eccc0ee74f3b2b2dc1
+maintainers:
+  - email: kontakt@undkonsorten.com
+    name: undkonsorten
+    url: https://undkonsorten.com/
+name: t3monitoring
+run_as_context:
+  - description: Container [mariadb] runs as non-root user and group.
+    gid: 999
+    group_name: mysql
+    uid: 999
+    user_name: mysql
+  - description: |
+      Container [t3monitoring] starts as root (Apache needs it to bind port 80),
+      then drops privileges to www-data itself before running any application code.
+    gid: 0
+    group_name: root
+    uid: 0
+    user_name: root
+sources:
+  - https://github.com/t3monitor/t3monitoring
+title: t3monitoring
+train: community
+version: 1.0.0
